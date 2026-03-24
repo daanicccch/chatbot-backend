@@ -13,4 +13,4 @@ ENV NODE_ENV=production
 ENV PORT=4000
 EXPOSE ${PORT}
 
-CMD ["npm", "run", "start"]
+CMD ["sh", "-c", "npx sequelize-cli db:migrate && npm run start"]
