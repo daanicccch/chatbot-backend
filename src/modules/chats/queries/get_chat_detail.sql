@@ -60,7 +60,15 @@ message_rows as (
     m.updated_at
   from messages m
   join owned_chat oc on oc.id = m.chat_id
-  order by m.created_at asc
+  order by
+    m.created_at asc,
+    case m.role
+      when 'system' then 0
+      when 'user' then 1
+      when 'assistant' then 2
+      else 3
+    end asc,
+    m.id asc
 ),
 attachment_rows as (
   select
@@ -85,7 +93,18 @@ select
   cs.*,
   coalesce(
     (
-      select json_agg(m order by m.created_at asc)
+      select json_agg(
+        m
+        order by
+          m.created_at asc,
+          case m.role
+            when 'system' then 0
+            when 'user' then 1
+            when 'assistant' then 2
+            else 3
+          end asc,
+          m.id asc
+      )
       from message_rows m
     ),
     '[]'::json
