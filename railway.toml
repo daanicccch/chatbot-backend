@@ -1,0 +1,8 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "npx sequelize-cli db:migrate && npm run start"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

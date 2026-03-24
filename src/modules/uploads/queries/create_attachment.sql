@@ -1,0 +1,29 @@
+insert into attachments (
+  owner_type,
+  owner_id,
+  chat_id,
+  kind,
+  filename,
+  mime_type,
+  size_bytes,
+  storage_provider,
+  storage_path,
+  public_url,
+  extracted_text,
+  metadata
+)
+values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
+returning
+  id,
+  chat_id,
+  message_id,
+  kind,
+  filename,
+  mime_type,
+  size_bytes,
+  storage_provider,
+  storage_path,
+  public_url,
+  extracted_text,
+  metadata,
+  created_at;

@@ -1,0 +1,9 @@
+const GUEST_SESSION_COOKIE = "gpt_chatbot_guest";
+const GUEST_SESSION_MAX_AGE = 60 * 60 * 24 * 365;
+const GUEST_QUESTION_LIMIT = 3;
+
+module.exports = {
+  GUEST_SESSION_COOKIE,
+  GUEST_SESSION_MAX_AGE,
+  GUEST_QUESTION_LIMIT,
+};

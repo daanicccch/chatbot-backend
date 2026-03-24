@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${POSTGRES_CONTAINER_NAME:-gpt-chatbot-postgres}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PG_DATABASE:-gpt_chatbot}
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-postgres}
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - gpt_chatbot_postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${BACKEND_CONTAINER_NAME:-gpt-chatbot-backend}
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    environment:
+      PG_HOST: postgres
+      PG_PORT: 5432
+      BACKEND_PORT: ${BACKEND_PORT:-4000}
+    ports:
+      - "${BACKEND_PORT:-4000}:${BACKEND_PORT:-4000}"
+    volumes:
+      - ./storage:/app/storage
+
+volumes:
+  gpt_chatbot_postgres_data:

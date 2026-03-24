@@ -1,0 +1,39 @@
+{
+  "name": "gpt-chatbot-backend",
+  "version": "1.0.0",
+  "description": "Express backend for gpt-chatbot",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "migrate": "npx sequelize-cli db:migrate",
+    "migrate:undo": "npx sequelize-cli db:migrate:undo",
+    "migrate:status": "npx sequelize-cli db:migrate:status"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.100.0",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "mammoth": "^1.12.0",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.17.1",
+    "sequelize": "^6.37.8",
+    "sequelize-cli": "^6.6.3",
+    "uuid": "^13.0.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}
