@@ -12,14 +12,9 @@ const {
 } = require("./chats.mappers");
 const chatsRepository = require("./chats.repository");
 
-async function requireOwnedChat(chatId, viewer, client) {
-  const chatRow = await chatsRepository.findOwnedChat(chatId, viewer, client);
-  if (!chatRow) {
-    throw new HttpError(404, "Chat not found.");
-  }
-
-  return chatRow;
-}
+const STREAM_PERSIST_MIN_CHARS = 240;
+const STREAM_PERSIST_TARGET_CHARS = 1200;
+const STREAM_PERSIST_MAX_INTERVAL_MS = 1500;
 
 async function listChats(viewer) {
   const rows = await chatsRepository.listChatsByViewer(viewer);
@@ -32,17 +27,16 @@ async function createChat(viewer) {
 }
 
 async function getChatDetail(viewer, chatId) {
-  const chatRow = await requireOwnedChat(chatId, viewer);
-  const [messageRows, attachmentRows] = await Promise.all([
-    chatsRepository.listChatMessages(chatId),
-    chatsRepository.listChatAttachments(chatId),
-  ]);
+  const chatDetailRow = await chatsRepository.getOwnedChatDetail(chatId, viewer);
+  if (!chatDetailRow) {
+    throw new HttpError(404, "Chat not found.");
+  }
 
-  const groupedAttachments = groupAttachmentsByMessage(attachmentRows);
+  const groupedAttachments = groupAttachmentsByMessage(chatDetailRow.attachments);
 
   return {
-    chat: serializeSummary(chatRow),
-    messages: messageRows.map((row) =>
+    chat: serializeSummary(chatDetailRow),
+    messages: chatDetailRow.messages.map((row) =>
       serializeMessage(row, groupedAttachments.byMessageId.get(row.id) || []),
     ),
     documents: groupedAttachments.documents,
@@ -51,30 +45,16 @@ async function getChatDetail(viewer, chatId) {
 
 async function loadRelevantDocumentContext(viewer, chatId, query, client) {
   const normalizedQuery = compactWhitespace(query);
-  const rows =
-    normalizedQuery.length >= 3
-      ? await chatsRepository.searchDocumentChunks(
-          {
-            viewer,
-            chatId,
-            query: normalizedQuery,
-            limit: 6,
-          },
-          client,
-        )
-      : [];
-
-  const selectedRows =
-    rows.length > 0
-      ? rows
-      : await chatsRepository.listRecentDocumentChunks(
-          {
-            viewer,
-            chatId,
-            limit: 4,
-          },
-          client,
-        );
+  const selectedRows = await chatsRepository.listRelevantDocumentChunks(
+    {
+      viewer,
+      chatId,
+      query: normalizedQuery,
+      searchLimit: 6,
+      recentLimit: 4,
+    },
+    client,
+  );
 
   return selectedRows.map((row) => truncateText(row.content, 1200));
 }
@@ -117,8 +97,6 @@ async function streamChatMessage(viewer, chatId, input, emit) {
   let updatedViewer = viewer;
 
   const prepared = await withTransaction(async (client) => {
-    await requireOwnedChat(chatId, viewer, client);
-
     if (viewer.kind === "guest") {
       const nextGuest = await consumeGuestQuestion(viewer.guest.id, client);
       updatedViewer = {
@@ -127,13 +105,23 @@ async function streamChatMessage(viewer, chatId, input, emit) {
       };
     }
 
-    const isFirstUserMessage = (await chatsRepository.countUserMessages(chatId, client)) === 0;
-    const userMessageRow = await chatsRepository.createUserMessage(chatId, resolvedPrompt, client);
-    const assistantMessageRow = await chatsRepository.createAssistantMessage(
-      chatId,
-      env.GEMINI_MODEL,
+    const preparationRow = await chatsRepository.prepareChatMessage(
+      {
+        chatId,
+        viewer,
+        content: resolvedPrompt,
+        model: env.GEMINI_MODEL,
+        title: deriveChatTitle(resolvedPrompt),
+      },
       client,
     );
+
+    if (!preparationRow?.chat_found || !preparationRow.user_message || !preparationRow.assistant_message) {
+      throw new HttpError(404, "Chat not found.");
+    }
+
+    const userMessageRow = preparationRow.user_message;
+    const assistantMessageRow = preparationRow.assistant_message;
 
     let imageAttachmentRows = [];
 
@@ -158,26 +146,7 @@ async function streamChatMessage(viewer, chatId, input, emit) {
         },
         client,
       );
-
-      await chatsRepository.attachDocumentChunksToChat(
-        {
-          chatId,
-          documentIds: input.documentIds,
-          viewer,
-        },
-        client,
-      );
     }
-
-    await chatsRepository.updateChatAfterUserMessage(
-      {
-        chatId,
-        isFirstUserMessage,
-        title: deriveChatTitle(resolvedPrompt),
-        model: env.GEMINI_MODEL,
-      },
-      client,
-    );
 
     const [historyRows, documentContext, refreshedChatRow] = await Promise.all([
       chatsRepository.listMessageHistoryForModel(chatId, assistantMessageRow.id, 12, client),
@@ -214,6 +183,7 @@ async function streamChatMessage(viewer, chatId, input, emit) {
 
   let assistantText = "";
   let sinceLastPersist = 0;
+  let lastPersistAt = Date.now();
 
   try {
     await geminiPool.streamChat({
@@ -233,8 +203,15 @@ async function streamChatMessage(viewer, chatId, input, emit) {
           text: chunk,
         });
 
-        if (sinceLastPersist >= 240) {
+        const now = Date.now();
+        const shouldPersistBySize = sinceLastPersist >= STREAM_PERSIST_TARGET_CHARS;
+        const shouldPersistByTime =
+          sinceLastPersist >= STREAM_PERSIST_MIN_CHARS &&
+          now - lastPersistAt >= STREAM_PERSIST_MAX_INTERVAL_MS;
+
+        if (shouldPersistBySize || shouldPersistByTime) {
           sinceLastPersist = 0;
+          lastPersistAt = now;
           await updateAssistantMessage(prepared.assistantMessageId, assistantText, "streaming");
         }
       },
@@ -276,6 +253,5 @@ module.exports = {
   createChat,
   getChatDetail,
   listChats,
-  requireOwnedChat,
   streamChatMessage,
 };

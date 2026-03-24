@@ -15,6 +15,16 @@ async function findOwnedChat(chatId, viewer, client) {
   return firstRow(result);
 }
 
+async function getOwnedChatDetail(chatId, viewer, client) {
+  const result = await dbQuery(
+    queries.get_chat_detail,
+    [chatId, viewer.ownerType, viewer.ownerId],
+    client,
+  );
+
+  return firstRow(result);
+}
+
 async function listChatsByViewer(viewer, client) {
   const result = await dbQuery(queries.list_chats, [viewer.ownerType, viewer.ownerId], client);
   return result.rows;
@@ -30,28 +40,20 @@ async function createChat(viewer, model, client) {
   return firstRow(result);
 }
 
-async function listChatMessages(chatId, client) {
-  const result = await dbQuery(queries.list_chat_messages, [chatId], client);
-  return result.rows;
-}
+async function prepareChatMessage(input, client) {
+  const result = await dbQuery(
+    queries.prepare_chat_message,
+    [
+      input.chatId,
+      input.viewer.ownerType,
+      input.viewer.ownerId,
+      input.content,
+      input.model,
+      input.title,
+    ],
+    client,
+  );
 
-async function listChatAttachments(chatId, client) {
-  const result = await dbQuery(queries.list_chat_attachments, [chatId], client);
-  return result.rows;
-}
-
-async function countUserMessages(chatId, client) {
-  const result = await dbQuery(queries.count_user_messages, [chatId], client);
-  return Number(firstRow(result)?.count || 0);
-}
-
-async function createUserMessage(chatId, content, client) {
-  const result = await dbQuery(queries.create_user_message, [chatId, content], client);
-  return firstRow(result);
-}
-
-async function createAssistantMessage(chatId, model, client) {
-  const result = await dbQuery(queries.create_assistant_message, [chatId, model], client);
   return firstRow(result);
 }
 
@@ -73,42 +75,23 @@ async function attachImagesToMessage(input, client) {
 
 async function attachDocumentsToChat(input, client) {
   await dbQuery(
-    queries.link_document_attachments_to_chat,
+    queries.link_documents_to_chat,
     [input.chatId, input.documentIds, input.viewer.ownerType, input.viewer.ownerId],
     client,
   );
 }
 
-async function attachDocumentChunksToChat(input, client) {
-  await dbQuery(
-    queries.link_document_chunks_to_chat,
-    [input.chatId, input.documentIds, input.viewer.ownerType, input.viewer.ownerId],
-    client,
-  );
-}
-
-async function updateChatAfterUserMessage(input, client) {
-  await dbQuery(
-    queries.update_chat_after_user_message,
-    [input.chatId, input.isFirstUserMessage, input.title, input.model],
-    client,
-  );
-}
-
-async function searchDocumentChunks(input, client) {
+async function listRelevantDocumentChunks(input, client) {
   const result = await dbQuery(
-    queries.search_document_chunks,
-    [input.viewer.ownerType, input.viewer.ownerId, input.chatId, input.query, input.limit],
-    client,
-  );
-
-  return result.rows;
-}
-
-async function listRecentDocumentChunks(input, client) {
-  const result = await dbQuery(
-    queries.list_recent_document_chunks,
-    [input.viewer.ownerType, input.viewer.ownerId, input.chatId, input.limit],
+    queries.list_relevant_document_chunks,
+    [
+      input.viewer.ownerType,
+      input.viewer.ownerId,
+      input.chatId,
+      input.query || "",
+      input.searchLimit || input.limit,
+      input.recentLimit || input.limit,
+    ],
     client,
   );
 
@@ -136,20 +119,14 @@ async function updateAssistantMessage(input, client) {
 }
 
 module.exports = {
-  attachDocumentChunksToChat,
   attachDocumentsToChat,
   attachImagesToMessage,
-  countUserMessages,
-  createAssistantMessage,
   createChat,
-  createUserMessage,
   findOwnedChat,
-  listChatAttachments,
-  listChatMessages,
+  getOwnedChatDetail,
   listChatsByViewer,
   listMessageHistoryForModel,
-  searchDocumentChunks,
+  listRelevantDocumentChunks,
+  prepareChatMessage,
   updateAssistantMessage,
-  updateChatAfterUserMessage,
-  listRecentDocumentChunks,
 };

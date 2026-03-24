@@ -4,7 +4,6 @@ const {
   GUEST_SESSION_COOKIE,
   GUEST_SESSION_MAX_AGE,
 } = require("../../constants/session");
-const { withTransaction } = require("../../db/pool");
 const { HttpError } = require("../../utils/httpError");
 const authRepository = require("./auth.repository");
 const {
@@ -70,12 +69,11 @@ async function createGuestProfile(client) {
 }
 
 async function getGuestProfile(guestId, client) {
-  const row = await authRepository.findGuestProfileById(guestId, client);
+  const row = await authRepository.touchGuestProfile(guestId, client);
   if (!row) {
     return null;
   }
 
-  await authRepository.touchGuestProfile(guestId, client);
   return mapGuest(row);
 }
 
@@ -92,52 +90,22 @@ async function syncSupabaseUser(authUser, guestId) {
   }
 
   const displayName = deriveDisplayNameFromSupabaseUser(authUser);
-
-  return withTransaction(async (client) => {
-    let userRow = await authRepository.findUserBySupabaseUserId(authUser.id, client);
-
-    if (userRow) {
-      userRow = await authRepository.updateUserProfile(
-        {
-          userId: userRow.id,
-          email,
-          displayName,
-        },
-        client,
-      );
-    } else {
-      const existingUser = await authRepository.findUserByEmail(email, client);
-
-      if (existingUser?.supabase_user_id && existingUser.supabase_user_id !== authUser.id) {
-        throw new HttpError(409, "This email is already linked to another account.");
-      }
-
-      userRow = existingUser
-        ? await authRepository.attachSupabaseIdentity(
-            {
-              userId: existingUser.id,
-              supabaseUserId: authUser.id,
-              email,
-              displayName,
-            },
-            client,
-          )
-        : await authRepository.createSupabaseUser(
-            {
-              supabaseUserId: authUser.id,
-              email,
-              displayName,
-            },
-            client,
-          );
-    }
-
-    if (guestId) {
-      await authRepository.transferGuestResources(guestId, userRow.id, client);
-    }
-
-    return mapUser(userRow);
+  const syncResult = await authRepository.syncSupabaseUser({
+    supabaseUserId: authUser.id,
+    email,
+    displayName,
+    guestId,
   });
+
+  if (syncResult?.email_conflict) {
+    throw new HttpError(409, "This email is already linked to another account.");
+  }
+
+  if (!syncResult?.user_row) {
+    throw new HttpError(500, "Failed to sync user profile.");
+  }
+
+  return mapUser(syncResult.user_row);
 }
 
 async function resolveViewer(accessToken, guestId) {

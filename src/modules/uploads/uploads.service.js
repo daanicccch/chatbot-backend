@@ -8,24 +8,10 @@ const {
 } = require("../../services/documentService");
 const { uploadStoredFile } = require("../../services/storageService");
 const { serializeAttachment } = require("../chats/chats.mappers");
-const chatsRepository = require("../chats/chats.repository");
 const uploadsRepository = require("./uploads.repository");
-
-async function ensureOwnedChat(chatId, viewer, client) {
-  if (!chatId) {
-    return;
-  }
-
-  const chatRow = await chatsRepository.findOwnedChat(chatId, viewer, client);
-  if (!chatRow) {
-    throw new HttpError(404, "Chat not found.");
-  }
-}
 
 async function persistUpload(viewer, input) {
   return withTransaction(async (client) => {
-    await ensureOwnedChat(input.chatId, viewer, client);
-
     const attachmentRow = await uploadsRepository.createAttachment(
       {
         ownerType: viewer.ownerType,
@@ -44,18 +30,23 @@ async function persistUpload(viewer, input) {
       client,
     );
 
+    if (!attachmentRow) {
+      throw new HttpError(404, "Chat not found.");
+    }
+
     if (input.kind === "document" && input.extractedText) {
       const chunks = chunkText(input.extractedText);
+      const chunkIndexes = chunks.map((_, index) => index);
 
-      for (const [chunkIndex, content] of chunks.entries()) {
-        await uploadsRepository.createDocumentChunk(
+      if (chunks.length > 0) {
+        await uploadsRepository.createDocumentChunks(
           {
             attachmentId: attachmentRow.id,
             ownerType: viewer.ownerType,
             ownerId: viewer.ownerId,
             chatId: input.chatId,
-            chunkIndex,
-            content,
+            chunkIndexes,
+            contents: chunks,
           },
           client,
         );

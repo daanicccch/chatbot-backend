@@ -28,16 +28,16 @@ async function createAttachment(input, client) {
   return firstRow(result);
 }
 
-async function createDocumentChunk(input, client) {
+async function createDocumentChunks(input, client) {
   await dbQuery(
-    queries.create_document_chunk,
+    queries.create_document_chunks,
     [
       input.attachmentId,
       input.ownerType,
       input.ownerId,
       input.chatId || null,
-      input.chunkIndex,
-      input.content,
+      input.chunkIndexes,
+      input.contents,
     ],
     client,
   );
@@ -45,5 +45,5 @@ async function createDocumentChunk(input, client) {
 
 module.exports = {
   createAttachment,
-  createDocumentChunk,
+  createDocumentChunks,
 };
