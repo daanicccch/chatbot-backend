@@ -16,6 +16,24 @@ module.exports = {
       end;
       $$;
 
+      create or replace function cleanup_user_owned_records()
+      returns trigger
+      language plpgsql
+      as $$
+      begin
+        delete from document_chunks
+        where owner_type = 'user' and owner_id = old.id;
+
+        delete from attachments
+        where owner_type = 'user' and owner_id = old.id;
+
+        delete from chats
+        where owner_type = 'user' and owner_id = old.id;
+
+        return old;
+      end;
+      $$;
+
       create table if not exists app_users (
         id uuid primary key default gen_random_uuid(),
         email text not null unique,
@@ -128,6 +146,12 @@ module.exports = {
       for each row
       execute function set_updated_at();
 
+      drop trigger if exists trg_app_users_cleanup_owned_records on app_users;
+      create trigger trg_app_users_cleanup_owned_records
+      after delete on app_users
+      for each row
+      execute function cleanup_user_owned_records();
+
       drop trigger if exists trg_chats_updated_at on chats;
       create trigger trg_chats_updated_at
       before update on chats
@@ -151,6 +175,7 @@ module.exports = {
       drop table if exists guest_profiles;
       drop table if exists user_sessions;
       drop table if exists app_users;
+      drop function if exists cleanup_user_owned_records();
       drop function if exists set_updated_at();
     `);
   },
